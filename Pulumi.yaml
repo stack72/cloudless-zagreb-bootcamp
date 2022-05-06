@@ -1,0 +1,3 @@
+name: cloudless-zagreb
+runtime: nodejs
+description: A minimal Azure Native TypeScript Pulumi program
