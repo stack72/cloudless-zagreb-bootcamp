@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import * as docker from "@pulumi/docker";
 
 import * as containerregistry from "@pulumi/azure-native/containerregistry";
 import * as operationalinsights from "@pulumi/azure-native/operationalinsights";
@@ -20,6 +21,32 @@ const workspaceSharedKeys = operationalinsights.getSharedKeysOutput({
     workspaceName: workspace.name,
 });
 
+const registry = new containerregistry.Registry("regsitry", {
+    resourceGroupName: resourceGroup.name,
+    sku: {
+        name: "Basic"
+    },
+})
+
+const credentials = containerregistry.listRegistryCredentialsOutput({
+    resourceGroupName: resourceGroup.name,
+    registryName: registry.name,
+});
+const adminUsername = credentials.apply(c => c.username!);
+const adminPassword = credentials.apply(c => c.passwords![0].value!);
+
+const myDockerApp = new docker.Image("node-app", {
+    imageName: "node-app:v1.0.0",
+    build: {
+        context: "./node-app"
+    },
+    registry: {
+        server: registry.loginServer,
+        username: adminUsername,
+        password: adminPassword,
+    }
+})
+
 const kubeEnv = new app.ManagedEnvironment("env", {
     resourceGroupName: resourceGroup.name,
     appLogsConfiguration: {
@@ -39,11 +66,20 @@ const containerApp = new app.ContainerApp("app", {
             external: true,
             targetPort: 80,
         },
+        registries: [{
+            server: registry.loginServer,
+            username: adminUsername,
+            passwordSecretRef: "pwd",
+        }],
+        secrets: [{
+            name: "pwd",
+            value: adminPassword,
+        }]
     },
     template: {
         containers: [{
             name: "myapp",
-            image: "nginx:latest",
+            image: myDockerApp.imageName,
         }],
     },
 });
